@@ -39,7 +39,7 @@ export default function FarmerView() {
       <div className="view-header">
         <h2 className="view-title">농가 출하 최적화</h2>
         <div className="view-header-badges">
-          <DataLabel variant="assumed">합성 데이터</DataLabel>
+          <DataLabel variant="cited">공공데이터 실측</DataLabel>
         </div>
       </div>
 

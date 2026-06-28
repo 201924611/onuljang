@@ -34,7 +34,7 @@ export default function ConsumerView() {
       <div className="view-header">
         <h2 className="view-title">소비자 구매 신호</h2>
         <div className="view-header-badges">
-          <DataLabel variant="demo">합성 데이터</DataLabel>
+          <DataLabel variant="cited">공공데이터 실측</DataLabel>
           <DataLabel variant="assumed">AI 추정</DataLabel>
         </div>
       </div>
@@ -42,14 +42,14 @@ export default function ConsumerView() {
       {/* 신호 그리드 4열 */}
       <Card
         title="오늘의 장보기 신호등"
-        hint="평년 대비 가격 — 색만으로 판단 금지, 라벨/아이콘 병기"
+        hint="최근 기준 대비 가격 — 색만으로 판단 금지, 라벨·아이콘 병기"
         style={{ marginBottom: 'var(--sp-5)' }}
       >
         <div className="legend">
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span className="legend-dot" style={{ background: 'var(--cheap)' }} />
             <ArrowDownIcon size={14} style={{ color: 'var(--cheap)' }} />
-            쌈 (평년比 -8%↓) — 지금 사기 좋음
+            쌈 (최근比 -8%↓) — 지금 사기 좋음
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span className="legend-dot" style={{ background: 'var(--normal)' }} />
@@ -59,7 +59,7 @@ export default function ConsumerView() {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span className="legend-dot" style={{ background: 'var(--pricey)' }} />
             <ArrowUpIcon size={14} style={{ color: 'var(--pricey)' }} />
-            비쌈 (평년比 +8%↑) — 대체재 고려
+            비쌈 (최근比 +8%↑) — 대체재 고려
           </span>
         </div>
 
@@ -81,7 +81,7 @@ export default function ConsumerView() {
                 <div className="tile-dev num">
                   <Icon size={14} />
                   {it.devPct > 0 ? '+' : ''}{it.devPct}%
-                  <span style={{ color: 'var(--g-500)', fontWeight: 400, fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-11)' }}>&nbsp;vs 평년</span>
+                  <span style={{ color: 'var(--g-500)', fontWeight: 400, fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-11)' }}>&nbsp;vs 최근</span>
                 </div>
                 {it.status === 'pricey' && it.altInCat && (
                   <div className="tile-alt">대신 <b>{it.altInCat}</b> 추천</div>
@@ -179,7 +179,7 @@ export default function ConsumerView() {
             <Card
               title="AI 가격 이상 감지"
               hint={`평소(30일) 분포 대비 ±2.2σ 이탈 · ${anom.count}건`}
-              headerRight={<DataLabel variant="demo">합성 데이터</DataLabel>}
+              headerRight={<DataLabel variant="cited">공공데이터 실측</DataLabel>}
             >
               <div className="anomaly-list">
                 {anom.items.map(a => (
@@ -201,7 +201,7 @@ export default function ConsumerView() {
           {/* 알뜰 장바구니 */}
           <Card
             title="오늘의 알뜰 장바구니"
-            hint="평년比 가장 저렴한 5품목"
+            hint="최근比 가장 저렴한 5품목"
             headerRight={
               <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--brand)', fontSize: 'var(--fs-13)' }}>
                 <CartIcon size={16} />
@@ -222,7 +222,7 @@ export default function ConsumerView() {
               ))}
             </div>
             <p style={{ color: 'var(--g-500)', fontSize: 'var(--fs-12)', marginTop: 'var(--sp-3)' }}>
-              평년가 = 직전 5년 동기간(±7일) 전국 평균. 데이터: 채소 일일가격(15087352).
+              기준선 = 최근 영업일 전국 평균(실 경매). 데이터: 전국 공영도매시장 실시간 경매정보(15141808).
             </p>
           </Card>
         </div>

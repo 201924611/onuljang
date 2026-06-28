@@ -63,7 +63,7 @@ export default function Sidebar({ mode, setMode, live }) {
           주요 채소류 일일가격
         </a>
         <span className="sidebar-footer-note">
-          경락가는 결정론적 합성 시계열(데모용). 운영 시 실 API로 대체.
+          경락가는 전국 공영도매시장 실시간 경매정보(15141808), 기상은 기상청 ASOS(15059093) 실측. 제철 외 일부 품목은 모델 추정.
         </span>
         <span className="sidebar-footer-note">
           농림축산식품부·농촌진흥청 「제11회 농업·농촌 공공데이터+AI 창업경진대회」

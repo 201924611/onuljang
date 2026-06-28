@@ -4,9 +4,11 @@ import {
   ITEM_BY_CODE, MARKET_BY_CODE, GRADE_BY_CODE,
   rand, randn, distanceKm,
 } from './data.js';
+import { REAL, LIVE } from './realsnap.js';
 
 const DAY = 86400000;
-export const REF_DATE = new Date('2026-06-19T00:00:00Z'); // 데모 기준일(고정 → 재현성)
+// 기준일: 실데이터 스냅샷이 있으면 그 날짜(실 거래정산일), 없으면 고정 데모일
+export const REF_DATE = new Date((LIVE ? REAL.date : '2026-06-19') + 'T00:00:00Z');
 
 export function doy(date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
@@ -22,6 +24,16 @@ export function weatherOf(dateStr) {
   const k = doy(d);
   // 연중 평균기온 곡선(한국 중부) + 시드 변동
   const baseT = 12.5 - 12 * Math.cos((2 * Math.PI * (k - 20)) / 365);
+  // 실 ASOS: 기준일과 일치하면 실측 기온·강수 사용(15059093)
+  if (LIVE && REAL.weather && dateStr === REAL.date) {
+    const wr = REAL.weather;
+    const tA = Math.round((wr.avgTa - baseT) * 10) / 10;
+    const rn = Math.round(wr.sumRn || 0);
+    return {
+      date: dateStr, avgTa: wr.avgTa, tAnom: tA, sumRn: rn,
+      shock: Math.round((Math.max(0, rn - 15) * 0.006 + Math.max(0, Math.abs(tA) - 3) * 0.03) * 1000) / 1000,
+    };
+  }
   const tAnom = randn('wT:' + dateStr) * 2.6;           // 기온 이상(℃)
   const rainHit = rand('wR:' + dateStr) < 0.24;          // 강수일 여부
   const rain = rainHit ? Math.round(rand('wRmm:' + dateStr) * 48 + 2) : 0;
@@ -34,30 +46,45 @@ export function weatherOf(dateStr) {
   };
 }
 
-// ── 경락가 생성(원/단위) : 품목×시장×등급×날짜 결정론적 ──────────────────────
-export function priceOf(itemCode, marketCode, gradeCode, dateStr) {
+// ── 경락가(원/단위) : 합성 시계열(품목×시장×등급×날짜 결정론적) ───────────────
+function synPrice(itemCode, marketCode, gradeCode, dateStr) {
   const it = ITEM_BY_CODE[itemCode];
   const mk = MARKET_BY_CODE[marketCode];
   const gr = GRADE_BY_CODE[gradeCode] || GRADE_BY_CODE['B'];
   if (!it || !mk) return null;
   const d = new Date(dateStr + 'T00:00:00Z');
   const k = doy(d);
-  // 계절성: peakDoY 부근에서 공급↓→가격↑
   const seasonal = 1 + it.volat * 0.6 * Math.cos((2 * Math.PI * (k - it.peakDoY)) / 365);
-  // 금년 작황(공급상태): 연·주차 블록으로 느리게 변동 → 평년대비 편차의 원천(현실의 풍흉)
   const yearSupply = 1 + seasonAnom(itemCode, d) * it.volat;
-  // 시장 편향
   const mkBias = 1 + mk.biasPct / 100 + (rand(`mk:${itemCode}:${marketCode}`) - 0.5) * 0.06;
-  // 기상 충격(품목 민감도)
   const w = weatherOf(dateStr);
   const wEffect = 1 + w.shock * it.weather;
-  // 일자 노이즈
   const noise = 1 + randn(`px:${itemCode}:${marketCode}:${gradeCode}:${dateStr}`) * it.volat * 0.16;
-  let p = it.basePrice * gr.mult * seasonal * yearSupply * mkBias * wEffect * noise;
-  // 단위 가격 라운딩(현실감)
+  return it.basePrice * gr.mult * seasonal * yearSupply * mkBias * wEffect * noise;
+}
+
+// (품목,시장) 실가격 레벨 보정 계수: 합성 시계열을 실 경락가(원/kg)에 맞춤
+const _factor = {};
+function realFactor(itemCode, marketCode) {
+  if (!LIVE) return null;
+  const rp = REAL.prices?.[itemCode]?.[marketCode];
+  if (rp == null) return null;
+  const key = itemCode + '|' + marketCode;
+  if (_factor[key] == null) {
+    const synB = synPrice(itemCode, marketCode, 'B', REAL.date);
+    _factor[key] = (synB && synB > 0) ? rp / synB : 1;
+  }
+  return _factor[key];
+}
+
+// 경락가: 실데이터 있으면 실 레벨로 보정(오늘=실가격, 시간 동학은 모델 유지), 없으면 합성
+export function priceOf(itemCode, marketCode, gradeCode, dateStr) {
+  const base = synPrice(itemCode, marketCode, gradeCode, dateStr);
+  if (base == null) return null;
+  const f = realFactor(itemCode, marketCode);
+  let p = f != null ? base * f : base;
   const step = p > 6000 ? 100 : (p > 1500 ? 50 : 10);
-  p = Math.max(step, Math.round(p / step) * step);
-  return p;
+  return Math.max(step, Math.round(p / step) * step);
 }
 
 // 금년 작황 이상(공급상태): 14일 간격 knot를 부드럽게 보간 → 평년대비 편차+추세 자기상관 생성
@@ -174,8 +201,11 @@ export function nationalAvg(itemCode, dateStr) {
   const ps = MARKETS.map(m => priceOf(itemCode, m.code, 'B', dateStr));
   return Math.round(ps.reduce((a, b) => a + b, 0) / ps.length);
 }
-// 평년(직전 5년 같은 날 ±7일) 평균 — 표준데이터(15029181) 백필 대체
+// 기준선: 실데이터 있으면 최근 영업일 평균(실측), 없으면 합성 평년(직전 5년 ±7일)
 function normalPrice(itemCode, dateStr) {
+  if (LIVE && dateStr === REAL.date && REAL.baseline?.[itemCode] != null) {
+    return REAL.baseline[itemCode];
+  }
   const d0 = new Date(dateStr + 'T00:00:00Z');
   let sum = 0, n = 0;
   for (let y = 1; y <= 5; y++) {
