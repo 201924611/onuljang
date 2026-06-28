@@ -416,6 +416,46 @@
   .farmer-grid { grid-template-columns: 1fr; }
 }
 
+/* ── 결론 히어로 카드 (농가 뷰 맨 위, 크게) ─────────── */
+.reco-hero {
+  background: linear-gradient(180deg, var(--brand-tint), transparent);
+  border: 1px solid var(--brand-border);
+  border-radius: 14px;
+  padding: var(--sp-5) var(--sp-6);
+  margin-bottom: var(--sp-5);
+}
+.reco-hero-top {
+  display: flex; justify-content: space-between; align-items: baseline;
+  flex-wrap: wrap; gap: 6px;
+}
+.reco-hero-eyebrow { font-size: 0.95rem; font-weight: 700; color: var(--g-600); }
+.reco-hero-sub { font-size: var(--fs-12); color: var(--g-500); }
+.reco-hero-market {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 8px; font-size: 2rem; font-weight: 800; color: var(--g-800);
+  line-height: 1.1;
+}
+.reco-hero-market svg { color: var(--brand); flex-shrink: 0; }
+.reco-hero-region { font-size: 1rem; font-weight: 600; color: var(--g-500); }
+.reco-hero-net { margin-top: 10px; font-size: 1.15rem; color: var(--g-700); }
+.reco-hero-net b { font-size: 1.7rem; font-weight: 800; color: var(--brand); }
+.reco-hero-gain { margin-top: 4px; font-size: 1rem; color: var(--g-600); }
+.reco-hero-gain b { color: var(--brand); font-weight: 700; }
+
+/* 시장 표 '전체 보기' 토글 */
+.more-toggle {
+  margin-top: var(--sp-3); width: 100%; padding: 11px;
+  border: 1px solid var(--border); background: var(--g-50);
+  border-radius: var(--radius-btn); font-size: var(--fs-13);
+  font-weight: 600; color: var(--g-700); cursor: pointer;
+}
+.more-toggle:hover { background: var(--g-100); }
+
+@media (max-width: 600px) {
+  .reco-hero-market { font-size: 1.55rem; }
+  .reco-hero-net b { font-size: 1.4rem; }
+}
+
 /* ── 신호 그리드 4열 (소비자 뷰) ────────────────── */
 .signal-grid {
   display: grid;
