@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { MARKETS, ITEMS, GRADES, ORIGINS } from './data.js';
-import { curDate, routing, consumerSignal, forecast, anomalies, boardSnapshot, weatherOf } from './engine.js';
+import { curDate, routing, shipTiming, consumerSignal, forecast, anomalies, boardSnapshot, weatherOf } from './engine.js';
 import { LIVE } from './realsnap.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +24,9 @@ for (const it of ITEMS) {
 }
 const forecasts = {};
 for (const it of ITEMS) forecasts[it.code] = forecast(it.code);
+// 출하 적기(기본 출하지/등급/물량) 프리컴퓨트 — 오프라인 폴백용
+const shipTimingByItem = {};
+for (const it of ITEMS) shipTimingByItem[it.code] = shipTiming({ itemCode: it.code, gradeCode: 'B', originName: defaultOrigin, qtyKg: 1000 });
 
 const snapshot = {
   meta,
@@ -35,6 +38,7 @@ const snapshot = {
   weather: weatherOf(refDate),
   routingByItem,
   forecasts,
+  shipTimingByItem,
   generatedFor: 'offline-fallback',
 };
 

@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { MARKETS, ITEMS, GRADES, ORIGINS } from './data.js';
 import {
-  curDate, routing, consumerSignal, forecast, anomalies, boardSnapshot, weatherOf,
+  curDate, routing, shipTiming, consumerSignal, forecast, anomalies, boardSnapshot, weatherOf,
 } from './engine.js';
 import { REAL, LIVE, reloadReal } from './realsnap.js';
 
@@ -36,11 +36,12 @@ app.get('/api/meta', (req, res) => {
     origins: ORIGINS.map(o => o.name),
     refDate: curDate(),
     live: LIVE, dataBackend: REAL?.backend || 'none', dbDays: REAL?.days || 0,
+    // 정직성: 현재 프로토타입이 실연동(런타임 DB로 적재)한 소스만 integrated=true.
     dataSources: [
-      { id: '15141808', name: '전국 공영도매시장 실시간 경매정보(aT)', url: 'https://www.data.go.kr/data/15141808/openapi.do' },
-      { id: '15029181', name: '도매시장 경락가격 표준데이터', url: 'https://www.data.go.kr/data/15029181/standard.do' },
-      { id: '15059093', name: '기상청 ASOS 일자료', url: 'https://www.data.go.kr/data/15059093/openapi.do' },
-      { id: '15087352', name: '주요 채소류 일일가격', url: 'https://www.data.go.kr/data/15087352/fileData.do' },
+      { id: '15141808', name: '전국 공영도매시장 실시간 경매정보(aT)', url: 'https://www.data.go.kr/data/15141808/openapi.do', integrated: true },
+      { id: '15059093', name: '기상청 ASOS 일자료', url: 'https://www.data.go.kr/data/15059093/openapi.do', integrated: true },
+      { id: '15029181', name: '도매시장 경락가격 표준데이터(시계열 백필 확장 예정)', url: 'https://www.data.go.kr/data/15029181/standard.do', integrated: false },
+      { id: '15087352', name: '주요 채소류 일일가격(소매가 비교 확장 예정)', url: 'https://www.data.go.kr/data/15087352/fileData.do', integrated: false },
     ],
     notice: LIVE
       ? '경락가·거래량은 전국 공영도매시장 실시간 경매정보(15141808), 기상은 ASOS(15059093) 실측. SQLite로 주기 갱신, 제철 외 일부 품목만 모델 보완.'
@@ -52,6 +53,16 @@ app.get('/api/routing', (req, res) => {
   try {
     const { item, grade = 'B', origin, qty } = req.query;
     res.json(routing({
+      itemCode: item || ITEMS[0].code, gradeCode: grade,
+      originName: origin || ORIGINS[0].name,
+      qtyKg: Math.max(1, parseInt(qty || '1000', 10)),
+    }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/shiptiming', (req, res) => {
+  try {
+    const { item, grade = 'B', origin, qty } = req.query;
+    res.json(shipTiming({
       itemCode: item || ITEMS[0].code, gradeCode: grade,
       originName: origin || ORIGINS[0].name,
       qtyKg: Math.max(1, parseInt(qty || '1000', 10)),

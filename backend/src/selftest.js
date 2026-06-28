@@ -1,6 +1,6 @@
 // selftest.js — 엔진 무결성 자가검증(빌드 없이 로직 확인)
 import { ITEMS, ORIGINS } from './data.js';
-import { routing, consumerSignal, forecast, anomalies, boardSnapshot } from './engine.js';
+import { routing, shipTiming, consumerSignal, forecast, anomalies, boardSnapshot } from './engine.js';
 
 let fail = 0;
 const ok = (c, m) => { if (!c) { console.error('  ✗', m); fail++; } else console.log('  ✓', m); };
@@ -36,6 +36,29 @@ for (const it of ITEMS) {
   }
 }
 if (n) console.log(`   → 실 백테스트 평균 방향 적중률 ${(hitSum / n).toFixed(1)}% (랜덤 50%, ${n}품목)`);
+
+console.log('3b) 출하 적기 예측 — 배추, 강원 춘천, 1000kg');
+const st = shipTiming({ itemCode: '0901', gradeCode: 'B', originName: '강원 춘천', qtyKg: 1000 });
+ok(st.days.length === 7, `7일 산출 (${st.days.length})`);
+ok(st.days.filter(d => d.dow === 0).every(d => d.closed), '일요일=휴장 표시');
+ok(st.days.filter(d => !d.closed).every(d => d.expectedNetPerKg > 0), '영업일 기대 실수령 양수');
+ok(!!st.recommendDate && st.days.some(d => d.date === st.recommendDate && !d.closed), `추천일 ${st.recommendDate}(${st.recommendDow}) 영업일`);
+{
+  const open = st.days.filter(d => !d.closed);
+  const maxNpk = Math.max(...open.map(d => d.expectedNetPerKg));
+  const recNpk = open.find(d => d.date === st.recommendDate).expectedNetPerKg;
+  ok(recNpk === maxNpk, '추천일이 영업일 중 기대 실수령 최대');
+}
+ok(typeof st.note === 'string' && st.note.length > 0, '안내문 존재');
+console.log(`   → 추천 ${st.recommendDate}(${st.recommendDow}) @ ${st.recommendMarket}, 오늘 대비 ${st.gainVsTodayPct >= 0 ? '+' : ''}${st.gainVsTodayPct}%`);
+console.log(`   → 백테스트: ${st.backtest.insufficient ? '보류(표본 ' + st.backtest.samples + ')' : '실측 ' + st.backtest.samples + '회 적중률 ' + st.backtest.hitRate + '% 평균 +' + st.backtest.avgGainPct + '%'}`);
+let stAll = 0, stOk = 0;
+for (const it of ITEMS) {
+  const r = shipTiming({ itemCode: it.code, gradeCode: 'B', originName: '강원 춘천', qtyKg: 1000 });
+  stAll++;
+  if (r.days.length === 7 && r.recommendDate) stOk++;
+}
+ok(stOk === stAll, `전 품목 출하적기 산출 (${stOk}/${stAll})`);
 
 console.log('4) 이상탐지');
 const a = anomalies();

@@ -49,3 +49,11 @@ export async function getRouting({ item, grade = 'A', origin, qty = 1000 }) {
   const base = sample.routingByItem[item];
   return { ...base, _offline: true };
 }
+export async function getShipTiming({ item, grade = 'B', origin, qty = 1000 }) {
+  if (await ping()) {
+    try { return await get(`/api/shiptiming?item=${item}&grade=${grade}&origin=${encodeURIComponent(origin)}&qty=${qty}`); } catch {}
+  }
+  // 오프라인 폴백: 기본(보통/춘천/1000kg) 출하적기 + 안내
+  const base = sample.shipTimingByItem?.[item];
+  return base ? { ...base, _offline: true } : null;
+}

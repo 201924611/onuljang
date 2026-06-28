@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { Card, Stat, DataLabel, won } from '../components/ui.jsx';
 import { RouteIcon, RobotIcon, InfoIcon } from '../components/icons.jsx';
-import { meta, getRouting } from '../api.js';
+import { meta, getRouting, getShipTiming } from '../api.js';
 
 const ICON_MAP = {
   route: <RouteIcon size={18} />,
@@ -18,10 +18,12 @@ export default function FarmerView() {
   const [origin, setOrigin] = useState(meta.origins[0]);
   const [qty, setQty]       = useState(1000);
   const [data, setData]     = useState(null);
+  const [timing, setTiming] = useState(null);
 
   useEffect(() => {
     let live = true;
     getRouting({ item, grade, origin, qty }).then(d => live && setData(d));
+    getShipTiming({ item, grade, origin, qty }).then(d => live && setTiming(d));
     return () => { live = false; };
   }, [item, grade, origin, qty]);
 
@@ -205,6 +207,95 @@ export default function FarmerView() {
           </div>
         </div>
       )}
+
+      {/* 출하 적기 — 향후 7일 최적일 (모델 추정) */}
+      {timing && timing.days && (
+        <ShipTimingCard timing={timing} itemName={itemName} qty={qty} />
+      )}
     </div>
+  );
+}
+
+function ShipTimingCard({ timing, itemName, qty }) {
+  const days = timing.days || [];
+  const recDate = timing.recommendDate;
+  const chartData = days.map(d => ({
+    label: `${d.date.slice(5).replace('-', '/')}\n${d.dowName}`,
+    value: d.closed ? 0 : d.expectedNetPerKg,
+    closed: d.closed,
+    fill: d.closed ? 'var(--g-200)' : (d.date === recDate ? 'var(--brand)' : 'var(--g-300)'),
+  }));
+  const recDay = days.find(d => d.date === recDate);
+  const bt = timing.backtest;
+
+  return (
+    <Card
+      title="출하 적기 — 향후 7일 최적일"
+      style={{ marginTop: 'var(--sp-5)' }}
+      headerRight={<DataLabel variant="assumed">AI 추정(모델)</DataLabel>}
+    >
+      {/* 추천 배너 */}
+      <div className={`advice-row ${timing.recommendIsToday ? 'route' : 'ai'}`} style={{ marginBottom: 'var(--sp-4)' }}>
+        <RobotIcon size={18} />
+        <span>
+          <b>{timing.recommendIsToday ? '오늘 출하 권장' : `${recDay?.dowName}요일(${recDate}) 출하 권장`}</b>
+          {' · '}최적 시장 <b>{timing.recommendMarket}</b>
+          {!timing.recommendIsToday && timing.gainVsTodayPct > 0 && (
+            <> · 오늘 대비 <b style={{ color: 'var(--brand)' }}>+{timing.gainVsTodayPct}%</b>
+              (<span className="num">+{won(timing.gainVsTodayWon)}원</span> / {itemName} {won(qty)}kg)</>
+          )}
+        </span>
+      </div>
+
+      {/* 일자별 기대 실수령 막대 */}
+      <div style={{ width: '100%', height: 200 }}>
+        <ResponsiveContainer>
+          <BarChart data={chartData} margin={{ top: 18, right: 8, left: 8, bottom: 4 }}>
+            <XAxis
+              dataKey="label"
+              interval={0}
+              tick={{ fontSize: 10, fill: 'var(--g-600)' }}
+              tickLine={false}
+              axisLine={{ stroke: 'var(--g-200)' }}
+            />
+            <YAxis hide domain={[0, 'dataMax']} />
+            <Tooltip
+              cursor={{ fill: 'var(--g-100)' }}
+              formatter={(v, _n, p) => p.payload.closed ? ['휴장', ''] : [`${won(v)}원/kg`, '기대 실수령']}
+              labelFormatter={l => String(l).replace('\n', ' ')}
+              contentStyle={{ borderRadius: 10, border: '1px solid var(--border)', fontSize: 12 }}
+            />
+            <Bar dataKey="value" radius={[5, 5, 0, 0]}>
+              {chartData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+              <LabelList
+                dataKey="value"
+                position="top"
+                formatter={v => v ? won(v) : '휴장'}
+                style={{ fontSize: 10, fill: 'var(--g-500)' }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* 추천일 기상 플래그 */}
+      {recDay?.weatherFlag && (
+        <div className="advice-row" style={{ marginTop: 'var(--sp-3)' }}>
+          <InfoIcon size={16} />
+          <span>{recDay.weatherFlag.icon} 추천일 기상: {recDay.weatherFlag.text} — 등급하락 위험 반영됨</span>
+        </div>
+      )}
+
+      {/* 정직성: 방법 + 백테스트 */}
+      <p className="spread-note" style={{ marginTop: 'var(--sp-3)' }}>
+        {timing.note}
+        <br />
+        산출: 추세(최근 실거래 회귀) × 요일패턴(실 거래일 평균) × 기상 등급위험 → 시장별 실수령 재계산 후 최적일. 일요일은 휴장 제외.{' '}
+        {bt && (bt.insufficient
+          ? <b>백테스트: 데이터 누적 시 공개(현재 실 표본 부족).</b>
+          : <b>백테스트(실측 {bt.samples}회·최대 {bt.horizonDays}거래일): 추천일이 당일출하 대비 이득 적중률 {bt.hitRate}%, 평균 +{bt.avgGainPct}%.</b>)}
+        {' '}모델 기반 예측이며 매매 권유가 아닙니다.
+      </p>
+    </Card>
   );
 }

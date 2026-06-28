@@ -57,10 +57,10 @@ export default function Sidebar({ mode, setMode, live }) {
         </a>
         <a
           className="sidebar-footer-link"
-          href="https://www.data.go.kr/data/15087352/fileData.do"
+          href="https://www.data.go.kr/data/15059093/openapi.do"
           target="_blank" rel="noreferrer"
         >
-          주요 채소류 일일가격
+          기상청 ASOS 일자료
         </a>
         <span className="sidebar-footer-note">
           경락가는 전국 공영도매시장 실시간 경매정보(15141808), 기상은 기상청 ASOS(15059093) 실측. 제철 외 일부 품목은 모델 추정.

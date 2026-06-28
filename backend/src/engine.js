@@ -356,6 +356,177 @@ export function anomalies(dateStr = curDate()) {
   return { date: dateStr, count: out.length, items: out };
 }
 
+// ── 5) 출하 적기 예측: 향후 7일 중 실수령이 가장 높을 예상일 추천 ──────────────
+// 일자별 가격승수 = 추세(forecast 회귀 기울기) × 요일패턴(실 27일 요일효과) 을 오늘 실수령에 적용,
+// 기상(강수·고온) 등급하락 위험은 net 하향으로 별도 반영. 일요일=휴장 제외. 모델 기반(매매권유 아님).
+const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+// 요일별 가격효과: 실 history(품목별 일별 전국평균)에서 요일평균/전체평균. 표본 부족 요일/품목은 중립(1).
+const _dowCache = {};
+function dowEffect(itemCode) {
+  if (itemCode in _dowCache) return _dowCache[itemCode];
+  let eff = null;
+  const h = LIVE ? REAL.history?.[itemCode] : null;
+  if (h && REAL.historyDates?.length) {
+    const sums = {}, cnts = {};
+    let tot = 0, totN = 0;
+    for (const ds of REAL.historyDates) {
+      const v = h[ds]; if (v == null) continue;
+      const dow = new Date(ds + 'T00:00:00Z').getUTCDay();
+      sums[dow] = (sums[dow] || 0) + v; cnts[dow] = (cnts[dow] || 0) + 1;
+      tot += v; totN++;
+    }
+    if (totN >= 8) {
+      const mean = tot / totN;
+      eff = {};
+      for (let d = 0; d < 7; d++) {
+        // 표본 ≥2 요일만 반영, 소표본 과적합 방지 위해 ±10%로 클램프
+        eff[d] = cnts[d] >= 2 ? Math.min(1.1, Math.max(0.9, (sums[d] / cnts[d]) / mean)) : 1;
+      }
+    }
+  }
+  _dowCache[itemCode] = eff;
+  return eff;
+}
+
+// 기상 등급하락 위험 → 농가 실수령 하향 비율(음수). 시장가 추세(forecast)와 별개의 '내 물건 품질' 손실.
+function weatherGradeRisk(w, it) {
+  let p = 0;
+  if (w.sumRn >= 25) p -= 0.05; else if (w.sumRn >= 15) p -= 0.025;
+  if (w.tAnom >= 6) p -= 0.04; else if (w.tAnom >= 4) p -= 0.02;
+  return Math.round(p * (it.weather || 1) * 1000) / 1000;
+}
+function weatherFlagOf(w) {
+  if (w.sumRn >= 15) return { type: 'rain', icon: '🌧', text: `강수 ${w.sumRn}mm — 무름·등급하락 우려` };
+  if (w.tAnom >= 4) return { type: 'heat', icon: '🌡', text: `평년比 +${w.tAnom}℃ 고온 — 신선도 저하 주의` };
+  return null;
+}
+
+export function shipTiming({ itemCode, gradeCode = 'B', originName, qtyKg = 1000, dateStr = curDate() }) {
+  const it = ITEM_BY_CODE[itemCode];
+  if (!it) throw new Error('unknown item');
+  // 오늘 기준 시장별 실수령(실데이터). 각 시장의 gross/수수료율/운송비 재사용.
+  const base = routing({ itemCode, gradeCode, originName, qtyKg, dateStr });
+  const baseRows = base.rows.map(r => ({
+    market: r.market, marketCode: r.marketCode,
+    gross: r.gross, feeRate: r.gross > 0 ? r.fee / r.gross : 0, transport: r.transport,
+  }));
+  const today = nationalAvg(itemCode, dateStr);
+  // 추세: forecast와 동일하게 실 거래일 최근 7개(없으면 합성 45일) 회귀 기울기
+  const rs = realSeries(itemCode);
+  const trendPts = rs ? rs.slice(-7) : pastSeries(itemCode, dateStr, 45).slice(-7);
+  const slope = linregSlope(trendPts);
+  const dowEff = dowEffect(itemCode);
+  const refDow = new Date(dateStr + 'T00:00:00Z').getUTCDay();
+  const refDowFactor = dowEff ? (dowEff[refDow] || 1) : 1;
+
+  const bestNetOnDay = (priceMult, gradeRisk) => {
+    let best = null;
+    for (const r of baseRows) {
+      const grossD = r.gross * priceMult;
+      const net = (grossD * (1 - r.feeRate) - r.transport) * (1 + gradeRisk);
+      if (!best || net > best.net) best = { market: r.market, marketCode: r.marketCode, net };
+    }
+    return best;
+  };
+
+  const days = [];
+  for (let off = 0; off <= 6; off++) {
+    const d = new Date(new Date(dateStr + 'T00:00:00Z').getTime() + off * DAY);
+    const ds = fmtDate(d);
+    const dow = d.getUTCDay();
+    if (dow === 0) { // 일요일 = 도매시장 휴장
+      days.push({ date: ds, dow, dowName: DOW_KO[dow], closed: true, isToday: off === 0 });
+      continue;
+    }
+    // 추세계수(선형, 7일 외삽 과대 방지 클램프) × 요일계수(오늘 요일 기준 상대) → 오늘 대비 가격승수
+    const trendFactor = Math.min(1.15, Math.max(0.85, 1 + (slope / today) * off));
+    const dowFactor = dowEff ? (dowEff[dow] || 1) / refDowFactor : 1;
+    const priceMult = Math.min(1.25, Math.max(0.8, trendFactor * dowFactor));
+    const w = weatherOf(ds);
+    const gradeRisk = weatherGradeRisk(w, it);
+    const best = bestNetOnDay(priceMult, gradeRisk);
+    days.push({
+      date: ds, dow, dowName: DOW_KO[dow], closed: false, isToday: off === 0,
+      bestMarket: best.market, bestMarketCode: best.marketCode,
+      net: Math.round(best.net), expectedNetPerKg: Math.round(best.net / qtyKg),
+      priceForecast: Math.round(today * priceMult),
+      priceMultPct: Math.round((priceMult - 1) * 1000) / 10,
+      gradeRiskPct: Math.round(gradeRisk * 1000) / 10,
+      weatherFlag: weatherFlagOf(w),
+      weather: { avgTa: w.avgTa, tAnom: w.tAnom, sumRn: w.sumRn },
+    });
+  }
+  const open = days.filter(d => !d.closed);
+  const todayDay = open.find(d => d.isToday) || open[0];
+  const rec = open.reduce((a, b) => (b.expectedNetPerKg > a.expectedNetPerKg ? b : a), open[0]);
+  const gainVsToday = todayDay ? rec.net - todayDay.net : 0;
+  const gainPct = todayDay && todayDay.net > 0 ? Math.round((gainVsToday / todayDay.net) * 1000) / 10 : 0;
+  const recIsToday = rec.isToday;
+
+  const note = recIsToday
+    ? `추세·요일패턴상 향후 7일 내 오늘보다 나은 날이 없어 ‘오늘 출하’가 유리합니다. (모델 추정, 매매권유 아님)`
+    : `${rec.dowName}요일(${rec.date})에 ‘${rec.bestMarket}’ 출하 시 오늘 대비 약 +${gainPct}%(${gainVsToday.toLocaleString()}원) 더 받을 것으로 추정됩니다. (모델 추정, 매매권유 아님)`;
+
+  return {
+    date: dateStr, item: it.name, itemCode, grade: GRADE_BY_CODE[gradeCode]?.name,
+    origin: base.origin, qtyKg, today,
+    days, recommendDate: rec.date, recommendDow: rec.dowName,
+    recommendMarket: rec.bestMarket, recommendIsToday: recIsToday,
+    gainVsTodayWon: gainVsToday, gainVsTodayPct: gainPct,
+    real: !!rs, dowPattern: !!dowEff,
+    backtest: shipTimingBacktest(itemCode),
+    note,
+    method: '추세(최근 실거래 회귀) × 요일패턴(실 거래일) × 기상 등급위험 → 시장별 실수령 재계산 후 최적일',
+  };
+}
+
+// 출하적기 백테스트: 과거 윈도우마다 (당시 데이터만으로) 추천일을 정하고, 그날 실제가가 '당일 출하' 대비 이득이었는지.
+// 정직성: 실 표본만, 부족하면 insufficient. 가격레벨 기준(운송비 상수 무관한 방향성).
+const _stBtCache = {};
+function shipTimingBacktest(itemCode) {
+  if (itemCode in _stBtCache) return _stBtCache[itemCode];
+  const rs = realSeries(itemCode);
+  let res;
+  if (!rs || rs.length < 12) {
+    res = { real: !!rs, samples: 0, insufficient: true };
+    _stBtCache[itemCode] = res; return res;
+  }
+  const dowEff = dowEffect(itemCode);
+  const H = 5; // 향후 최대 5거래일 내 추천
+  let hits = 0, cnt = 0, gainSum = 0, recWait = 0;
+  for (let i = 6; i + 2 < rs.length; i++) {
+    const slope = linregSlope(rs.slice(i - 6, i + 1));
+    const today = rs[i].v;
+    const refDow = new Date(rs[i].date + 'T00:00:00Z').getUTCDay();
+    const refF = dowEff ? (dowEff[refDow] || 1) : 1;
+    let bestPred = -Infinity, bestIdx = i;
+    for (let j = i; j <= Math.min(i + H, rs.length - 1); j++) {
+      const off = j - i;
+      const dow = new Date(rs[j].date + 'T00:00:00Z').getUTCDay();
+      const tf = Math.min(1.15, Math.max(0.85, 1 + (slope / today) * off));
+      const df = dowEff ? (dowEff[dow] || 1) / refF : 1;
+      const pred = today * Math.min(1.25, Math.max(0.8, tf * df));
+      if (pred > bestPred) { bestPred = pred; bestIdx = j; }
+    }
+    const recActual = rs[bestIdx].v;
+    if (bestIdx > i) recWait++;
+    gainSum += (recActual - today) / today;
+    if (recActual >= today) hits++;
+    cnt++;
+  }
+  res = cnt < 5
+    ? { real: true, samples: cnt, insufficient: true }
+    : {
+        real: true, samples: cnt, horizonDays: H, insufficient: false,
+        hitRate: Math.round((hits / cnt) * 1000) / 10,        // 추천일 실제가 ≥ 당일가 비율
+        avgGainPct: Math.round((gainSum / cnt) * 1000) / 10,  // 추천일 실현 평균 개선율(당일출하=0 대비)
+        waitRate: Math.round((recWait / cnt) * 1000) / 10,    // '기다리라'고 한 비율
+      };
+  _stBtCache[itemCode] = res;
+  return res;
+}
+
 // 시장별 시세 미니 차트용(라이브 틱 느낌): 오늘 품목 전 시장 경락가
 export function boardSnapshot(dateStr = curDate()) {
   const rows = [];
