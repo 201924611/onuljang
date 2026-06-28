@@ -1,0 +1,17 @@
+{
+  "name": "onuljang-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "오늘장 백엔드 — 도매시장 실시간 경매 기반 출하 라우팅·실수령·소비자 신호·AI 전망 API (비민감 로직 전용)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "selftest": "node src/selftest.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

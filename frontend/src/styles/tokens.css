@@ -1,0 +1,112 @@
+/* tokens.css — 오늘장 디자인 토큰 v2 (chulha 원리: 단일 액센트 + Toss cool gray + 틴트 그림자) */
+:root {
+  /* ── 브랜드 ──────────────────────────────────── */
+  --brand:        #15803d;
+  --brand-hover:  #166534;
+  --brand-tint:   rgba(21,128,61,.08);
+  --brand-border: rgba(21,128,61,.25);
+
+  /* ── Toss cool gray 9단계 ─────────────────────── */
+  --g-50:   #f8f9fa;
+  --g-100:  #f2f4f6;
+  --g-150:  #ebeef2;
+  --g-200:  #e0e4ea;
+  --g-300:  #cdd2da;
+  --g-400:  #b0b8c1;
+  --g-500:  #8b95a1;
+  --g-600:  #6b7684;
+  --g-700:  #4e5968;
+  --g-800:  #333d4b;
+  --g-900:  #191f28;
+  --g-950:  #0a0e14;
+
+  /* ── 시맨틱 (아이콘/라벨 병기 원칙) ──────────── */
+  --cheap:       #15803d;
+  --cheap-bg:    rgba(21,128,61,.08);
+  --cheap-border: rgba(21,128,61,.22);
+  --pricey:      #dc2626;
+  --pricey-bg:   rgba(220,38,38,.08);
+  --pricey-border: rgba(220,38,38,.22);
+  --normal:      var(--g-600);
+  --normal-bg:   var(--g-100);
+  --warn:        #d97706;
+  --warn-bg:     rgba(217,119,6,.08);
+  --warn-border: rgba(217,119,6,.22);
+  --info:        #2563eb;
+  --info-bg:     rgba(37,99,235,.08);
+  --info-border: rgba(37,99,235,.18);
+
+  /* ── 사이드바 ──────────────────────────────────── */
+  --sidebar-bg:            #0f1a14;
+  --sidebar-width:         240px;
+  --sidebar-text:          #a0b4a8;
+  --sidebar-text-muted:    #5a7267;
+  --sidebar-active-bg:     rgba(21,128,61,.15);
+  --sidebar-active-border: var(--brand);
+
+  /* ── 서피스 ────────────────────────────────────── */
+  --canvas:   var(--g-50);
+  --surface:  #ffffff;
+  --border:   rgba(0,20,10,.09);
+  --border-strong: rgba(0,20,10,.14);
+
+  /* ── 그림자 (브랜드 틴트 — 검정 0%) ──────────── */
+  --shadow-card: 0 1px 3px 0 rgba(0,40,20,.08), 0 0 0 1px rgba(0,40,20,.05);
+  --shadow-lift: 0 4px 12px 0 rgba(0,40,20,.12), 0 0 0 1px rgba(0,40,20,.06);
+
+  /* ── 폰트 ─────────────────────────────────────── */
+  --font-sans: 'Pretendard Variable', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+
+  /* ── 반경 ─────────────────────────────────────── */
+  --radius-card: 14px;
+  --radius-btn:  8px;
+  --radius-pill: 9999px;
+
+  /* ── 타입스케일 ───────────────────────────────── */
+  --fs-11: 0.6875rem;
+  --fs-12: 0.75rem;
+  --fs-13: 0.8125rem;
+  --fs-14: 0.875rem;
+  --fs-15: 0.9375rem;
+  --fs-16: 1rem;
+  --fs-18: 1.125rem;
+  --fs-20: 1.25rem;
+  --fs-24: 1.5rem;
+  --fs-28: 1.75rem;
+  --fs-32: 2rem;
+
+  /* ── 간격 (4px 그리드) ───────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+}
+
+/* ── 베이스 리셋 ──────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-15);
+  line-height: 1.55;
+  color: var(--g-900);
+  background: var(--canvas);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'tnum' 1, 'cv01' 1;
+}
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+h1, h2, h3, h4, p { margin: 0; }
+button { font-family: inherit; cursor: pointer; }
+a { color: var(--brand); }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
