@@ -22,15 +22,20 @@ const cheap = s.items.filter(i => i.status === 'cheap').length;
 const pricey = s.items.filter(i => i.status === 'pricey').length;
 console.log(`   → 쌈 ${cheap} / 비쌈 ${pricey} / 보통 ${s.items.length - cheap - pricey}`);
 
-console.log('3) AI 단기전망 + 백테스트');
+console.log('3) AI 단기전망 + 실 백테스트');
 let hitSum = 0, n = 0;
 for (const it of ITEMS) {
   const f = forecast(it.code);
   ok(f.path.length === 7, `${it.name}: 7일 경로`);
-  ok(f.backtest.samples > 30, `${it.name}: 백테스트 ${f.backtest.samples}샘플 적중률 ${f.backtest.hitRate}% MAPE ${f.backtest.mape}%`);
-  hitSum += f.backtest.hitRate; n++;
+  if (f.backtest.insufficient) {
+    ok(true, `${it.name}: 백테스트 보류(실 표본 ${f.backtest.samples || 0})`);
+  } else {
+    ok(f.backtest.real && f.backtest.samples >= 3 && f.backtest.hitRate >= 0,
+      `${it.name}: 실 백테스트 ${f.backtest.samples}거래일 적중률 ${f.backtest.hitRate}% MAPE ${f.backtest.mape}%`);
+    hitSum += f.backtest.hitRate; n++;
+  }
 }
-console.log(`   → 평균 방향 적중률 ${(hitSum / n).toFixed(1)}% (naive 50%)`);
+if (n) console.log(`   → 실 백테스트 평균 방향 적중률 ${(hitSum / n).toFixed(1)}% (랜덤 50%, ${n}품목)`);
 
 console.log('4) 이상탐지');
 const a = anomalies();

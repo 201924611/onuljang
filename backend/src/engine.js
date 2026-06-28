@@ -85,14 +85,31 @@ function realFactor(itemCode, marketCode) {
   return _factor[key];
 }
 
-// 경락가: 실데이터 있으면 실 레벨로 보정(오늘=실가격, 시간 동학은 모델 유지), 없으면 합성
+function roundStep(p) { const step = p > 6000 ? 100 : (p > 1500 ? 50 : 10); return Math.max(step, Math.round(p / step) * step); }
+
+// 경락가: 기준일+실데이터면 등급별 실 가격대(상=p75·하=p25 등) 또는 실 경락가, 그 외엔 실 레벨 보정/합성
 export function priceOf(itemCode, marketCode, gradeCode, dateStr) {
+  if (LIVE && dateStr === REAL.date) {
+    const mean = REAL.prices?.[itemCode]?.[marketCode];
+    const band = REAL.gradeBand?.[itemCode]?.[marketCode];
+    if (mean != null) {
+      if (band?.p25 != null && band?.p75 != null) {
+        // 실 가격 스프레드(IQR)를 등급 폭으로, 실 평균을 보통 기준으로 — 단조(하<보통<상<특) 보장
+        const iqr = Math.max(band.p75 - band.p25, mean * 0.15);
+        let t;
+        if (gradeCode === 'S') t = mean + iqr * 1.0;       // 특
+        else if (gradeCode === 'A') t = mean + iqr * 0.5;  // 상
+        else if (gradeCode === 'C') t = mean - iqr * 0.5;  // 하
+        else t = mean;                                     // 보통 = 실 평균
+        return roundStep(Math.max(10, t));
+      }
+      if (gradeCode === 'B') return roundStep(mean);
+    }
+  }
   const base = synPrice(itemCode, marketCode, gradeCode, dateStr);
   if (base == null) return null;
   const f = realFactor(itemCode, marketCode);
-  let p = f != null ? base * f : base;
-  const step = p > 6000 ? 100 : (p > 1500 ? 50 : 10);
-  return Math.max(step, Math.round(p / step) * step);
+  return roundStep(f != null ? base * f : base);
 }
 
 // 금년 작황 이상(공급상태): 14일 간격 knot를 부드럽게 보간 → 평년대비 편차+추세 자기상관 생성
@@ -213,8 +230,18 @@ export function consumerSignal(dateStr = curDate()) {
 }
 
 export function nationalAvg(itemCode, dateStr) {
+  // 실 과거 시계열(DB)이 있으면 그 날짜의 실 전국평균 사용
+  if (LIVE && REAL.history?.[itemCode]?.[dateStr] != null) return REAL.history[itemCode][dateStr];
   const ps = MARKETS.map(m => priceOf(itemCode, m.code, 'B', dateStr));
   return Math.round(ps.reduce((a, b) => a + b, 0) / ps.length);
+}
+
+// 실 거래일 시계열 [{date,v}] (오름차순) — 전망·백테스트·이상탐지용. 실데이터 없으면 null.
+function realSeries(itemCode) {
+  if (!LIVE || !REAL.historyDates?.length) return null;
+  const h = REAL.history?.[itemCode]; if (!h) return null;
+  const s = REAL.historyDates.filter(d => h[d] != null).map(d => ({ date: d, v: h[d] }));
+  return s.length >= 4 ? s : null;
 }
 // 기준선: 실데이터 있으면 최근 영업일 평균(실측), 없으면 합성 평년(직전 5년 ±7일)
 function normalPrice(itemCode, dateStr) {
@@ -236,16 +263,17 @@ function normalPrice(itemCode, dateStr) {
 // 모델: 계절성 추세 + 기상 보정의 경량 회귀(seasonal+weather). 무거운 학습 없음.
 export function forecast(itemCode, dateStr = curDate(), horizon = 7) {
   const today = nationalAvg(itemCode, dateStr);
-  const series = pastSeries(itemCode, dateStr, 45);
-  // 추세: 최근 7일 회귀 기울기
-  const slope = linregSlope(series.slice(-7));
-  // 기상 보정: 향후 강수/고온 충격
+  const it = ITEM_BY_CODE[itemCode];
+  const rs = realSeries(itemCode);
+  // 추세: 실 거래일 최근 7개 회귀(없으면 합성 45일 폴백)
+  const trendPts = rs ? rs.slice(-7) : pastSeries(itemCode, dateStr, 45).slice(-7);
+  const slope = linregSlope(trendPts);
+  // 기상 보정: 향후 3일 강수/고온 충격(ASOS 곡선)
   let wAdj = 0;
   for (let h = 1; h <= 3; h++) {
     const d = new Date(new Date(dateStr + 'T00:00:00Z').getTime() + h * DAY);
     wAdj += weatherOf(fmtDate(d)).shock;
   }
-  const it = ITEM_BY_CODE[itemCode];
   const pred3 = Math.round(today * (1 + (slope / today) * 3 + wAdj * it.weather * 0.5));
   const direction = pred3 > today * 1.01 ? +1 : pred3 < today * 0.99 ? -1 : 0;
   const path = [];
@@ -255,7 +283,7 @@ export function forecast(itemCode, dateStr = curDate(), horizon = 7) {
     const w = weatherOf(ds).shock * it.weather * 0.5;
     path.push({ date: ds, pred: Math.round(today * (1 + (slope / today) * h + w)) });
   }
-  return { itemCode, today, pred3, direction, path, backtest: backtestCache(itemCode, dateStr) };
+  return { itemCode, today, pred3, direction, path, real: !!rs, backtest: rs ? backtestReal(itemCode) : { real: false, insufficient: true } };
 }
 
 // 과거 시계열(전국 평균가)
@@ -276,35 +304,30 @@ function linregSlope(pts) {
   return den === 0 ? 0 : (n * sxy - sx * sy) / den;
 }
 
-// 백테스트: 과거 60개 시점에서 3일 후 실제 vs 예측 — MAPE·방향 적중률
+// 실 백테스트: 실 거래일 시계열에서 K거래일 후 실제 vs 예측 — 실측 방향 적중률·MAPE
 const _btCache = {};
-function backtestCache(itemCode, dateStr) {
-  const key = itemCode + '|' + dateStr;
-  if (_btCache[key]) return _btCache[key];
-  const d0 = new Date(dateStr + 'T00:00:00Z');
+function backtestReal(itemCode) {
+  if (_btCache[itemCode]) return _btCache[itemCode];
+  const rs = realSeries(itemCode);
+  const K = 3; // 3 거래일 후
+  if (!rs || rs.length < 7 + K + 3) { // 검증 표본(최소 3) 부족 → 보류
+    const res = { real: !!rs, samples: rs ? Math.max(0, rs.length - 7 - K) : 0, insufficient: true };
+    _btCache[itemCode] = res; return res;
+  }
   let absPctSum = 0, hit = 0, cnt = 0;
-  for (let i = 60; i >= 4; i--) {
-    const base = new Date(d0.getTime() - i * DAY);
-    const bs = fmtDate(base);
-    const series = pastSeries(itemCode, bs, 45);
-    const slope = linregSlope(series.slice(-7));
-    const cur = nationalAvg(itemCode, bs);
-    let wAdj = 0;
-    for (let h = 1; h <= 3; h++) wAdj += weatherOf(fmtDate(new Date(base.getTime() + h * DAY))).shock;
-    const pred = cur * (1 + (slope / cur) * 3 + wAdj * (ITEM_BY_CODE[itemCode].weather) * 0.5);
-    const actual = nationalAvg(itemCode, fmtDate(new Date(base.getTime() + 3 * DAY)));
+  for (let i = 6; i + K < rs.length; i++) {
+    const slope = linregSlope(rs.slice(i - 6, i + 1));
+    const cur = rs[i].v;
+    const pred = cur * (1 + (slope / cur) * K);
+    const actual = rs[i + K].v;
     absPctSum += Math.abs(pred - actual) / actual;
-    const pdir = Math.sign(pred - cur), adir = Math.sign(actual - cur);
-    if (pdir === adir) hit++;
+    if (Math.sign(pred - cur) === Math.sign(actual - cur)) hit++;
     cnt++;
   }
-  const res = {
-    samples: cnt,
-    mape: Math.round((absPctSum / cnt) * 1000) / 10,        // 평균절대오차율 %
-    hitRate: Math.round((hit / cnt) * 1000) / 10,            // 방향 적중률 %
-    naiveHit: 50.0,
-  };
-  _btCache[key] = res;
+  const res = cnt < 3
+    ? { real: true, samples: cnt, insufficient: true }
+    : { real: true, samples: cnt, mape: Math.round((absPctSum / cnt) * 1000) / 10, hitRate: Math.round((hit / cnt) * 1000) / 10, naiveHit: 50.0, insufficient: false };
+  _btCache[itemCode] = res;
   return res;
 }
 
@@ -312,7 +335,10 @@ function backtestCache(itemCode, dateStr) {
 export function anomalies(dateStr = curDate()) {
   const out = [];
   for (const it of ITEMS) {
-    const series = pastSeries(it.code, dateStr, 31).slice(0, 30).map(p => p.v);
+    const rs = realSeries(it.code);
+    let series;
+    if (rs && rs.length >= 10) series = rs.slice(0, -1).slice(-30).map(p => p.v); // 실 최근 분포(오늘 제외)
+    else series = pastSeries(it.code, dateStr, 31).slice(0, 30).map(p => p.v);     // 합성 폴백
     const mean = series.reduce((a, b) => a + b, 0) / series.length;
     const sd = Math.sqrt(series.reduce((a, b) => a + (b - mean) ** 2, 0) / series.length) || 1;
     const today = nationalAvg(it.code, dateStr);

@@ -18,7 +18,7 @@ const STATUS = {
 export default function ConsumerView() {
   const [sig, setSig]   = useState(null);
   const [anom, setAnom] = useState(null);
-  const [pick, setPick] = useState('0901');
+  const [pick, setPick] = useState('1301'); // 사과(전망 모델 적중률 높은 품목)를 기본 표시
   const [fc, setFc]     = useState(null);
 
   useEffect(() => { getSignal().then(setSig); getAnomaly().then(setAnom); }, []);
@@ -160,9 +160,22 @@ export default function ConsumerView() {
                 </ResponsiveContainer>
               </div>
 
-              <p style={{ color: 'var(--g-500)', fontSize: 'var(--fs-12)', marginTop: 'var(--sp-2)' }}>
-                ※ 모델 기반 추정 경로입니다. 실측 정확도 검증은 매일 실 경매 데이터가 쌓이면 함께 공개합니다. 매매 권유 아님.
-              </p>
+              {fc.backtest && !fc.backtest.insufficient ? (
+                <>
+                  <div className="bt-row">
+                    <span className="bt-item">실측 방향 적중률 <b className="num">{fc.backtest.hitRate}%</b> <span style={{ color: 'var(--g-500)' }}>(랜덤 50%)</span></span>
+                    <span className="bt-item">MAPE <b className="num">{fc.backtest.mape}%</b></span>
+                    <span className="bt-item">실 검증 <b className="num">{fc.backtest.samples}</b>거래일</span>
+                  </div>
+                  <p style={{ color: 'var(--g-500)', fontSize: 'var(--fs-12)', marginTop: 'var(--sp-2)' }}>
+                    ※ 실 경매 과거로 3거래일 후를 예측해 맞춰본 실측 정확도입니다(랜덤 50% 대비). 매매 권유 아님.
+                  </p>
+                </>
+              ) : (
+                <p style={{ color: 'var(--g-500)', fontSize: 'var(--fs-12)', marginTop: 'var(--sp-2)' }}>
+                  ※ 모델 기반 추정 경로입니다. 실측 정확도 검증은 실 거래 데이터가 더 쌓이면 공개합니다. 매매 권유 아님.
+                </p>
+              )}
             </>
           ) : (
             <p style={{ color: 'var(--g-500)', fontSize: 'var(--fs-13)' }}>

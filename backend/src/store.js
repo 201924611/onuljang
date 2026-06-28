@@ -22,7 +22,7 @@ export function openDb() {
     const d = new DatabaseSync(DB_PATH);
     d.exec(`CREATE TABLE IF NOT EXISTS daily_price(
       date TEXT, item_code TEXT, market_code TEXT,
-      price INTEGER, volume INTEGER,
+      price INTEGER, volume INTEGER, p25 INTEGER, p75 INTEGER,
       PRIMARY KEY(date,item_code,market_code));
     CREATE TABLE IF NOT EXISTS daily_weather(
       date TEXT PRIMARY KEY, stn TEXT, avgTa REAL, maxTa REAL, sumRn REAL);`);
@@ -50,12 +50,18 @@ export function loadSnapshot() {
 
 function fromDb() {
   const latest = db.prepare('SELECT MAX(date) d FROM daily_price').get().d;
-  const rows = db.prepare('SELECT item_code,market_code,price,volume FROM daily_price WHERE date=?').all(latest);
-  const prices = {}, volume = {};
+  const rows = db.prepare('SELECT item_code,market_code,price,volume,p25,p75 FROM daily_price WHERE date=?').all(latest);
+  const prices = {}, volume = {}, gradeBand = {};
   for (const r of rows) {
     (prices[r.item_code] = prices[r.item_code] || {})[r.market_code] = r.price;
     (volume[r.item_code] = volume[r.item_code] || {})[r.market_code] = r.volume;
+    (gradeBand[r.item_code] = gradeBand[r.item_code] || {})[r.market_code] = { p25: r.p25, p75: r.p75 };
   }
+  // 실 과거 시계열(품목별 일별 전국평균) — 전망·백테스트·이상탐지용
+  const historyDates = db.prepare('SELECT DISTINCT date FROM daily_price ORDER BY date').all().map(x => x.date);
+  const navRows = db.prepare('SELECT date,item_code,AVG(price) a FROM daily_price GROUP BY date,item_code').all();
+  const history = {};
+  for (const r of navRows) (history[r.item_code] = history[r.item_code] || {})[r.date] = Math.round(r.a);
   // 기준선: 최근 N영업일, 품목별 (시장평균의 일평균)
   const days = db.prepare('SELECT DISTINCT date FROM daily_price ORDER BY date DESC LIMIT ?').all(BASELINE_DAYS).map(x => x.date);
   const baseline = {};
@@ -75,9 +81,9 @@ function fromDb() {
   }
   return {
     date: latest, source: '공공데이터포털 API(15141808 경매 + 15059093 ASOS) · SQLite 주기 갱신',
-    unit: '원/kg', prices, volume, baseline, priceAvg,
+    unit: '원/kg', prices, volume, gradeBand, baseline, priceAvg, history, historyDates,
     weather: w ? { stn: w.stn, tm: w.date, avgTa: w.avgTa, maxTa: w.maxTa, sumRn: w.sumRn } : null,
-    backend: 'db', days: days.length,
+    backend: 'db', days: days.length, historyDays: historyDates.length,
   };
 }
 
