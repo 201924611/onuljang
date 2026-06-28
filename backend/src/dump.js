@@ -3,11 +3,11 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { MARKETS, ITEMS, GRADES, ORIGINS } from './data.js';
-import { REF_DATE, routing, consumerSignal, forecast, anomalies, boardSnapshot, weatherOf } from './engine.js';
+import { curDate, routing, consumerSignal, forecast, anomalies, boardSnapshot, weatherOf } from './engine.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fmt = d => d.toISOString().slice(0, 10);
-const refDate = fmt(REF_DATE);
+const refDate = curDate();
 
 const meta = {
   markets: MARKETS.map(({ code, name, region, feeRate }) => ({ code, name, region, feeRate })),

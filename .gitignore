@@ -3,3 +3,7 @@ dist/
 *.log
 .env
 .DS_Store
+
+# SQLite DB (refreshData가 재생성, 바이너리 미추적)
+backend/data/onuljang.db
+*.db

@@ -7,8 +7,9 @@ import {
 import { REAL, LIVE } from './realsnap.js';
 
 const DAY = 86400000;
-// 기준일: 실데이터 스냅샷이 있으면 그 날짜(실 거래정산일), 없으면 고정 데모일
-export const REF_DATE = new Date((LIVE ? REAL.date : '2026-06-19') + 'T00:00:00Z');
+// 기준일: 실데이터(DB)가 있으면 최신 거래정산일, 없으면 고정 데모일. 동적이라 주기 갱신 즉시 반영.
+export function curDate() { return LIVE ? REAL.date : '2026-06-19'; }
+export function REF_DATE() { return new Date(curDate() + 'T00:00:00Z'); }
 
 export function doy(date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
@@ -63,16 +64,23 @@ function synPrice(itemCode, marketCode, gradeCode, dateStr) {
   return it.basePrice * gr.mult * seasonal * yearSupply * mkBias * wEffect * noise;
 }
 
-// (품목,시장) 실가격 레벨 보정 계수: 합성 시계열을 실 경락가(원/kg)에 맞춤
+// (품목,시장) 실가격 레벨 보정 계수: 합성 시계열을 실 경락가(원/kg)에 맞춤.
+// 해당 시장 실데이터가 있으면 그 값, 없지만 품목 실데이터가 있으면 전국 중앙값×시장편향으로 보정(단위 일관 유지).
 const _factor = {};
 function realFactor(itemCode, marketCode) {
   if (!LIVE) return null;
-  const rp = REAL.prices?.[itemCode]?.[marketCode];
-  if (rp == null) return null;
+  const direct = REAL.prices?.[itemCode]?.[marketCode];
+  const itemAvg = REAL.priceAvg?.[itemCode];
+  if (direct == null && itemAvg == null) return null; // 품목 자체가 실데이터 없음(예: 제철 외) → 합성
   const key = itemCode + '|' + marketCode;
   if (_factor[key] == null) {
     const synB = synPrice(itemCode, marketCode, 'B', REAL.date);
-    _factor[key] = (synB && synB > 0) ? rp / synB : 1;
+    let target = direct;
+    if (target == null) { // 시장 누락 → 품목 전국 중앙값에 시장 편향만 반영
+      const mk = MARKET_BY_CODE[marketCode];
+      target = Math.round(itemAvg * (1 + (mk?.biasPct || 0) / 100));
+    }
+    _factor[key] = (synB && synB > 0) ? target / synB : 1;
   }
   return _factor[key];
 }
@@ -99,8 +107,12 @@ function seasonAnom(itemCode, date) {
   return (a * (1 - sm) + b * sm) * 0.45;
 }
 
-// 거래량(반입량, 단위수) — 시장 규모 + 계절
+// 거래량(반입량 kg) — 실데이터 있으면 실 거래량, 없으면 시장규모·계절 모델
 export function volumeOf(itemCode, marketCode, dateStr) {
+  if (LIVE && dateStr === REAL.date) {
+    const rv = REAL.volume?.[itemCode]?.[marketCode];
+    if (rv != null) return Math.round(rv);
+  }
   const mk = MARKET_BY_CODE[marketCode];
   const scale = mk.biasPct >= 4 ? 4.5 : (mk.biasPct >= 0 ? 2.4 : 1.4); // 큰 시장일수록 반입↑
   const base = 1200 * scale;
@@ -109,7 +121,7 @@ export function volumeOf(itemCode, marketCode, dateStr) {
 }
 
 // ── 1) 출하 라우팅 + 운송비 차감 실수령 (결정론적 핵심 기능) ──────────────────
-export function routing({ itemCode, gradeCode = 'B', originName, qtyKg = 1000, dateStr = fmtDate(REF_DATE) }) {
+export function routing({ itemCode, gradeCode = 'B', originName, qtyKg = 1000, dateStr = curDate() }) {
   const it = ITEM_BY_CODE[itemCode];
   if (!it) throw new Error('unknown item');
   const origin = ORIGINS.find(o => o.name === originName) || ORIGINS[0];
@@ -152,7 +164,9 @@ export function routing({ itemCode, gradeCode = 'B', originName, qtyKg = 1000, d
 }
 
 function unitToKg(it, price) {
-  // 단위가격 → kg 환산(개·포기 평균중량 가정)
+  // 실데이터(LIVE)는 경락가가 원/kg 통일 → 환산 불필요(항등)
+  if (LIVE) return price;
+  // 합성(원/단위) → kg 환산(개·포기 평균중량 가정)
   const wkg = { '포기': 2.5, '개': 0.25, 'kg': 1 }[it.unit] || 1;
   return price / wkg;
 }
@@ -171,7 +185,7 @@ function buildAdvice({ it, dateStr, best, w }) {
 }
 
 // ── 2) 소비자 신호등: 전국 평균가의 평년대비 편차 ────────────────────────────
-export function consumerSignal(dateStr = fmtDate(REF_DATE)) {
+export function consumerSignal(dateStr = curDate()) {
   const items = ITEMS.map(it => {
     const today = nationalAvg(it.code, dateStr);
     const normal = normalPrice(it.code, dateStr);  // 평년 동기간 평균
@@ -219,7 +233,7 @@ function normalPrice(itemCode, dateStr) {
 
 // ── 3) AI 단기전망 + 백테스트(정직성: 적중률·오차 함께 공개) ──────────────────
 // 모델: 계절성 추세 + 기상 보정의 경량 회귀(seasonal+weather). 무거운 학습 없음.
-export function forecast(itemCode, dateStr = fmtDate(REF_DATE), horizon = 7) {
+export function forecast(itemCode, dateStr = curDate(), horizon = 7) {
   const today = nationalAvg(itemCode, dateStr);
   const series = pastSeries(itemCode, dateStr, 45);
   // 추세: 최근 7일 회귀 기울기
@@ -294,7 +308,7 @@ function backtestCache(itemCode, dateStr) {
 }
 
 // ── 4) 가격 이상탐지: 오늘 전국 평균가의 z-score (30일 분포) ──────────────────
-export function anomalies(dateStr = fmtDate(REF_DATE)) {
+export function anomalies(dateStr = curDate()) {
   const out = [];
   for (const it of ITEMS) {
     const series = pastSeries(it.code, dateStr, 31).slice(0, 30).map(p => p.v);
@@ -316,7 +330,7 @@ export function anomalies(dateStr = fmtDate(REF_DATE)) {
 }
 
 // 시장별 시세 미니 차트용(라이브 틱 느낌): 오늘 품목 전 시장 경락가
-export function boardSnapshot(dateStr = fmtDate(REF_DATE)) {
+export function boardSnapshot(dateStr = curDate()) {
   const rows = [];
   for (const it of ITEMS.slice(0, 8)) {
     rows.push({

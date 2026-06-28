@@ -1,20 +1,13 @@
-// realsnap.js — 실 공공데이터 스냅샷 로더(있으면 실데이터, 없으면 합성 폴백)
-// data/realsnapshot.json 은 buildSnapshot.mjs 가 공공데이터포털 API로 생성한다.
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// realsnap.js — 런타임 실데이터 접근(앱은 API 직접호출 없이 이 스냅샷만 읽음)
+// store.loadSnapshot(): SQLite DB(주기 갱신) 우선, 없으면 번들 realsnapshot.json
+import { loadSnapshot } from './store.js';
 
-const __dir = path.dirname(fileURLToPath(import.meta.url));
-const SNAP_PATH = path.join(__dir, '..', 'data', 'realsnapshot.json');
+export let REAL = loadSnapshot();
+export let LIVE = Boolean(REAL && REAL.prices && Object.keys(REAL.prices).length);
 
-let REAL = null;
-try {
-  if (fs.existsSync(SNAP_PATH)) {
-    REAL = JSON.parse(fs.readFileSync(SNAP_PATH, 'utf-8'));
-  }
-} catch (e) {
-  REAL = null;
+// 주기 갱신(refreshData) 후 메모리 재적재용
+export function reloadReal() {
+  REAL = loadSnapshot();
+  LIVE = Boolean(REAL && REAL.prices && Object.keys(REAL.prices).length);
+  return { live: LIVE, date: REAL?.date, backend: REAL?.backend };
 }
-
-export { REAL };
-export const LIVE = Boolean(REAL && REAL.prices);
