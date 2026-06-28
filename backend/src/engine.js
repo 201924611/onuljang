@@ -177,9 +177,9 @@ function buildAdvice({ it, dateStr, best, w }) {
   if (w.sumRn >= 20) msgs.push({ type: 'weather', icon: '🌧', text: `강수 ${w.sumRn}mm 예보 — 무름·등급하락 우려, 조기 출하 권장` });
   else if (w.tAnom >= 4) msgs.push({ type: 'weather', icon: '🌡', text: `평년比 +${w.tAnom}℃ 고온 — 신선도 저하 주의, 당일 출하 권장` });
   const f = forecast(it.code);
-  if (f.backtest.hitRate >= 55) {
-    const dir = f.direction > 0 ? '상승' : f.direction < 0 ? '하락' : '보합';
-    msgs.push({ type: 'ai', icon: '🤖', text: `AI 단기전망(베타): 3일 ${dir} 가능성 (백테스트 적중률 ${f.backtest.hitRate}%) — 참고만` });
+  if (f.direction !== 0) {
+    const dir = f.direction > 0 ? '상승' : '하락';
+    msgs.push({ type: 'ai', icon: 'ai', text: `단기 방향(모델 참고): 3일 ${dir} 가능성 — 참고만, 매매 권유 아님` });
   }
   return msgs;
 }
@@ -196,9 +196,10 @@ export function consumerSignal(dateStr = curDate()) {
     else { status = 'normal'; label = '보통'; icon = '＝'; }
     const f = forecast(it.code, dateStr);
     return {
-      code: it.code, name: it.name, cat: it.cat, unit: it.unit,
+      code: it.code, name: it.name, cat: it.cat, unit: LIVE ? 'kg' : it.unit,
       today, normal, devPct, status, label, icon,
       next3: f.direction, // 7일 방향(참고)
+      real: !!(LIVE && REAL.prices?.[it.code] && Object.keys(REAL.prices[it.code]).length), // 실데이터 커버 여부
     };
   });
   // 대체재 추천: 같은 부류에서 가장 싼 품목

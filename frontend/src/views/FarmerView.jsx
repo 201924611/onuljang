@@ -14,7 +14,7 @@ const ICON_MAP = {
 
 export default function FarmerView() {
   const [item, setItem]     = useState('0901');   // 배추
-  const [grade, setGrade]   = useState('A');
+  const [grade, setGrade]   = useState('B');       // 보통(실 경매 평균=등급 블렌딩) → 배수 미적용이 기본
   const [origin, setOrigin] = useState(meta.origins[0]);
   const [qty, setQty]       = useState(1000);
   const [data, setData]     = useState(null);
@@ -160,7 +160,7 @@ export default function FarmerView() {
               <p className="spread-note">
                 실수령 = 경락가×물량 − 도매수수료(시장별 5~7%) − 운송·취급비(거리×{data.rate}원/kg·100km + {data.handling}원/kg).
                 최고-최하 스프레드: <b className="num">{data.spreadPct}%</b>.
-                경락가·거래량: aT 공영도매시장 경매정보(15141808).
+                경락가·거래량은 aT 공영도매시장 경매정보(15141808) 실측. ‘보통’ 등급은 실 경매 평균이며 그 외 등급은 추정 배수, 운송단가는 일반운임 근사입니다.
               </p>
             </Card>
           </div>

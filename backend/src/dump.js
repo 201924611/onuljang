@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { MARKETS, ITEMS, GRADES, ORIGINS } from './data.js';
 import { curDate, routing, consumerSignal, forecast, anomalies, boardSnapshot, weatherOf } from './engine.js';
+import { LIVE } from './realsnap.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fmt = d => d.toISOString().slice(0, 10);
@@ -11,7 +12,7 @@ const refDate = curDate();
 
 const meta = {
   markets: MARKETS.map(({ code, name, region, feeRate }) => ({ code, name, region, feeRate })),
-  items: ITEMS.map(({ code, name, cat, unit }) => ({ code, name, cat, unit })),
+  items: ITEMS.map(({ code, name, cat, unit }) => ({ code, name, cat, unit: LIVE ? 'kg' : unit })),
   grades: GRADES, origins: ORIGINS.map(o => o.name), refDate,
 };
 
@@ -19,7 +20,7 @@ const meta = {
 const defaultOrigin = '강원 춘천';
 const routingByItem = {};
 for (const it of ITEMS) {
-  routingByItem[it.code] = routing({ itemCode: it.code, gradeCode: 'A', originName: defaultOrigin, qtyKg: 1000 });
+  routingByItem[it.code] = routing({ itemCode: it.code, gradeCode: 'B', originName: defaultOrigin, qtyKg: 1000 }); // B=실 평균
 }
 const forecasts = {};
 for (const it of ITEMS) forecasts[it.code] = forecast(it.code);

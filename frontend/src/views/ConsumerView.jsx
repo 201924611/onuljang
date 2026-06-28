@@ -25,7 +25,8 @@ export default function ConsumerView() {
   useEffect(() => { getForecast(pick).then(setFc); }, [pick]);
 
   const items    = sig?.items || [];
-  const basket   = [...items].sort((a, b) => a.devPct - b.devPct).slice(0, 5);
+  // 알뜰 장바구니: 실데이터 커버 품목만(모델 추정 품목 제외)
+  const basket   = [...items].filter(it => it.real !== false).sort((a, b) => a.devPct - b.devPct).slice(0, 5);
   const pickName = meta.items.find(i => i.code === pick)?.name;
 
   return (
@@ -42,7 +43,7 @@ export default function ConsumerView() {
       {/* 신호 그리드 4열 */}
       <Card
         title="오늘의 장보기 신호등"
-        hint="최근 기준 대비 가격 — 색만으로 판단 금지, 라벨·아이콘 병기"
+        hint="지금 도매가가 최근 평균보다 싼지 비싼지 — 색·화살표·%로 함께 표시"
         style={{ marginBottom: 'var(--sp-5)' }}
       >
         <div className="legend">
@@ -74,7 +75,10 @@ export default function ConsumerView() {
                 onClick={() => setPick(it.code)}
                 aria-label={`${it.name} ${s.label} — 클릭하면 AI 전망 보기`}
               >
-                <div className="tile-name">{it.name}</div>
+                <div className="tile-name">
+                  {it.name}
+                  {it.real === false && <span style={{ fontSize: 'var(--fs-11)', color: 'var(--g-400)', fontWeight: 400, marginLeft: 4 }}>모델</span>}
+                </div>
                 <div className="tile-price num">
                   {won(it.today)}<small> 원/{it.unit}</small>
                 </div>
@@ -96,9 +100,9 @@ export default function ConsumerView() {
       <div className="consumer-bottom">
         {/* AI 단기 전망 */}
         <Card
-          title={`AI 단기 전망 · ${pickName || '—'}`}
-          hint="베타 — 백테스트 정확도 동반 공개"
-          headerRight={<DataLabel variant="assumed">AI 추정</DataLabel>}
+          title={`단기 방향 전망 · ${pickName || '—'}`}
+          hint="실 경매가에 계절·기상을 더한 경량 모델 — 참고용(매매 권유 아님)"
+          headerRight={<DataLabel variant="assumed">AI 추정(모델)</DataLabel>}
         >
           {fc ? (
             <>
@@ -156,13 +160,8 @@ export default function ConsumerView() {
                 </ResponsiveContainer>
               </div>
 
-              <div className="bt-row">
-                <span className="bt-item">방향 적중률 <b className="num">{fc.backtest.hitRate}%</b> <span style={{ color: 'var(--g-500)' }}>(naive 50%)</span></span>
-                <span className="bt-item">MAPE <b className="num">{fc.backtest.mape}%</b></span>
-                <span className="bt-item">검증표본 <b className="num">{fc.backtest.samples}</b></span>
-              </div>
               <p style={{ color: 'var(--g-500)', fontSize: 'var(--fs-12)', marginTop: 'var(--sp-2)' }}>
-                ※ 과거 {fc.backtest.samples}개 시점 백테스트 정확도를 함께 공개합니다. 투자·매매 권유 아님(참고용).
+                ※ 모델 기반 추정 경로입니다. 실측 정확도 검증은 매일 실 경매 데이터가 쌓이면 함께 공개합니다. 매매 권유 아님.
               </p>
             </>
           ) : (
@@ -177,9 +176,9 @@ export default function ConsumerView() {
           {/* 이상탐지 */}
           {anom && anom.items.length > 0 && (
             <Card
-              title="AI 가격 이상 감지"
-              hint={`평소(30일) 분포 대비 ±2.2σ 이탈 · ${anom.count}건`}
-              headerRight={<DataLabel variant="cited">공공데이터 실측</DataLabel>}
+              title="가격 급변 감지"
+              hint={`최근 가격 분포에서 크게 벗어난 급등·급락 · ${anom.count}건`}
+              headerRight={<DataLabel variant="assumed">AI 추정(모델)</DataLabel>}
             >
               <div className="anomaly-list">
                 {anom.items.map(a => (
