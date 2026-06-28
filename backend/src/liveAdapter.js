@@ -1,8 +1,8 @@
-// liveAdapter.js — 운영 전환용 라이브 데이터 어댑터 (스텁)
+// liveAdapter.js — 도매 API 직접 호출용 선택적 어댑터 (스텁)
 // ─────────────────────────────────────────────────────────────────────────────
-// 사용법: 환경변수 DATA_GO_KR_KEY(공공데이터포털 발급키)를 설정하면
-//   engine.js 의 priceOf/nationalAvg 가 합성 시계열 대신 아래 fetchLiveAuction() 를
-//   호출하도록 라우팅하면 된다(코드 변경점은 engine의 데이터 소스 1곳뿐).
+// 참고: 앱의 실데이터는 이미 refreshData.mjs 가 공공데이터포털 API를 호출해 SQLite에 적재하고
+//   store.js/realsnap.js 로 런타임에 공급한다(주 경로, 가동 중 · 27거래일). 이 어댑터는 DB 적재 없이
+//   요청 시 도매 API를 직접 호출하고 싶을 때 쓰는 대안 스텁이다(응답 스키마 매핑 TODO).
 // 발급: data.go.kr 로그인 → '전국 공영도매시장 실시간 경매정보(15141808)' 활용신청(자동승인).
 
 const KEY = process.env.DATA_GO_KR_KEY || '';
